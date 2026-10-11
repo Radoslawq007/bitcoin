@@ -1,0 +1,28 @@
+# Base44 sandbox build image for Bitcoin Core.
+#
+# It installs ONLY the toolchain and libraries needed to compile the node.
+# The repository source is never copied into the image: it is bind-mounted at
+# run time (see docker-compose.base44.yml), so every edit to the tree is
+# compiled by the container and nothing is frozen into a prebuilt layer.
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ccache \
+        cmake \
+        pkgconf \
+        python3 \
+        ca-certificates \
+        libevent-dev \
+        libboost-dev \
+        libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ccache keeps incremental rebuilds (after a restart or a source edit) fast.
+ENV CCACHE_DIR=/ccache
+ENV CCACHE_MAXSIZE=3G
+ENV CCACHE_COMPRESS=1
+
+WORKDIR /src

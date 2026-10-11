@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bitcoin Core &mdash; regtest node</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #141a21;
+    --panel-2: #1b232c;
+    --line: #26313c;
+    --ink: #e8eef5;
+    --muted: #93a3b3;
+    --accent: #f7931a;
+    --green: #35c48d;
+    --amber: #e5b054;
+    --red: #e0605e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 15% -10%, #16222e, var(--bg)) fixed;
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    padding: 28px 20px 56px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .coin { width: 38px; height: 38px; border-radius: 50%; background: var(--accent); color: #1b1200;
+          display: grid; place-items: center; font-weight: 800; font-size: 20px; }
+  h1 { font-size: 19px; margin: 0; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 999px;
+          border: 1px solid var(--line); background: var(--panel); font-size: 13px; font-family: var(--mono); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--amber); }
+  .pill[data-state="live"] .dot { background: var(--green); box-shadow: 0 0 0 4px rgba(53,196,141,.15); }
+  .pill[data-state="live"] { color: var(--green); border-color: rgba(53,196,141,.4); }
+  .pill[data-state="starting"] .dot { background: var(--amber); animation: blink 1.4s infinite; }
+  .pill[data-state="starting"] { color: var(--amber); border-color: rgba(229,176,84,.35); }
+  .pill[data-state="error"] .dot { background: var(--red); }
+  .pill[data-state="error"] { color: var(--red); border-color: rgba(224,96,94,.4); }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  .note { margin: 18px 0 0; padding: 12px 14px; border-radius: 10px; background: rgba(229,176,84,.09);
+          border: 1px solid rgba(229,176,84,.3); color: #f2dcb4; font-size: 13.5px; }
+  .note[hidden] { display: none; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .card .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .7px; }
+  .card .v { font-family: var(--mono); font-size: 20px; margin-top: 6px; word-break: break-all; }
+  .card .v small { font-size: 12px; color: var(--muted); }
+
+  .row { display: grid; grid-template-columns: 1.55fr 1fr; gap: 14px; margin-top: 22px; align-items: start; }
+  @media (max-width: 820px) { .row { grid-template-columns: 1fr; } }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 10px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase;
+       letter-spacing: .6px; padding-bottom: 8px; }
+  td { padding: 8px 0; border-top: 1px solid var(--line); }
+  td.h { color: var(--accent); }
+  .empty { color: var(--muted); font-size: 13px; }
+
+  button {
+    font: inherit; font-family: var(--mono); font-size: 13.5px; color: var(--ink); cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px 14px;
+    transition: border-color .15s, transform .05s;
+  }
+  button:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 12px; }
+  .flash { margin-top: 12px; font-family: var(--mono); font-size: 12.5px; color: var(--green); min-height: 18px; }
+  .flash[data-kind="error"] { color: var(--red); }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-family: var(--mono); word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="coin">&#8383;</div>
+      <div>
+        <h1>Bitcoin Core &mdash; regtest node</h1>
+        <div class="sub" id="nodeVersion">connecting to the node&hellip;</div>
+      </div>
+    </div>
+    <div class="pill" id="pill" data-state="starting"><span class="dot"></span><span id="pillText">connecting</span></div>
+  </header>
+
+  <div class="note" id="note">
+    The node is still starting. On first boot the container compiles <code>bitcoind</code> from the repository
+    source, which takes a while; this page fills in by itself as soon as RPC is up.
+  </div>
+
+  <section class="grid">
+    <div class="card"><div class="k">Block height</div><div class="v" id="blocks">&mdash;</div></div>
+    <div class="card"><div class="k">Chain</div><div class="v" id="chain">&mdash;</div></div>
+    <div class="card"><div class="k">Peers</div><div class="v" id="peers">&mdash;</div></div>
+    <div class="card"><div class="k">Mempool</div><div class="v" id="mempool">&mdash;</div></div>
+    <div class="card"><div class="k">Wallet balance</div><div class="v" id="balance">&mdash;</div></div>
+    <div class="card"><div class="k">Chain size</div><div class="v" id="disk">&mdash;</div></div>
+  </section>
+
+  <div class="row">
+    <div class="panel">
+      <h2>Latest blocks</h2>
+      <table>
+        <thead><tr><th>Height</th><th>Age</th><th>Txs</th><th>Hash</th></tr></thead>
+        <tbody id="blockRows"><tr><td colspan="4" class="empty">waiting for the node&hellip;</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Mine blocks</h2>
+      <div class="actions">
+        <button class="mine" data-blocks="1">Mine 1</button>
+        <button class="mine" data-blocks="10">Mine 10</button>
+        <button class="mine" data-blocks="100">Mine 100</button>
+      </div>
+      <div class="flash" id="flash"></div>
+      <div class="hint">Regtest mines instantly, so you can watch the chain grow. Coins go to the dashboard's
+        own wallet.</div>
+    </div>
+  </div>
+
+  <section class="panel" style="margin-top: 22px;">
+    <h2>Node details</h2>
+    <dl>
+      <dt>Version</dt><dd id="dVersion">&mdash;</dd>
+      <dt>Best block</dt><dd id="dBest">&mdash;</dd>
+      <dt>Difficulty</dt><dd id="dDiff">&mdash;</dd>
+      <dt>Verification</dt><dd id="dVerify">&mdash;</dd>
+    </dl>
+  </section>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function fmtBtc(amount) { return Number(amount).toFixed(8) + " BTC"; }
+  function fmtBytes(bytes) {
+    const units = ["B", "kB", "MB", "GB", "TB"];
+    let n = Number(bytes), i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return n.toFixed(i === 0 ? 0 : 1) + " " + units[i];
+  }
+  function fmtAge(seconds) {
+    if (seconds < 60) return seconds + "s ago";
+    if (seconds < 3600) return Math.floor(seconds / 60) + "m ago";
+    if (seconds < 86400) return Math.floor(seconds / 3600) + "h ago";
+    return Math.floor(seconds / 86400) + "d ago";
+  }
+  function setPill(state, text) {
+    $("pill").dataset.state = state;
+    $("pillText").textContent = text;
+  }
+
+  let lastTip = null;
+
+  async function refresh() {
+    let data;
+    try {
+      const response = await fetch("/api/status", { cache: "no-store" });
+      data = await response.json();
+    } catch (error) {
+      setPill("error", "dashboard offline");
+      return;
+    }
+    if (!data.ok) {
+      setPill(data.state === "error" ? "error" : "starting", data.state === "error" ? "node error" : "starting up");
+      $("note").hidden = data.state === "error";
+      if (data.state === "error") { $("note").textContent = data.message; $("note").hidden = false; }
+      return;
+    }
+    $("note").hidden = true;
+    setPill("live", "node live");
+    $("nodeVersion").textContent = data.version + " \u00b7 protocol " + data.protocol_version;
+    $("blocks").innerHTML = data.blocks + ' <small>/ ' + data.headers + " headers</small>";
+    $("chain").textContent = data.chain;
+    $("peers").textContent = data.connections;
+    $("mempool").innerHTML = data.mempool_txs + ' <small>' + fmtBytes(data.mempool_bytes) + "</small>";
+    $("balance").innerHTML = data.wallet
+      ? fmtBtc(data.wallet.trusted) + ' <small>' + fmtBtc(data.wallet.immature) + " immature</small>"
+      : '<small>no wallet yet</small>';
+    $("disk").textContent = fmtBytes(data.size_on_disk) + (data.pruned ? " (pruned)" : "");
+    $("dVersion").textContent = data.version;
+    $("dBest").textContent = data.best_block_hash;
+    $("dDiff").textContent = data.difficulty;
+    $("dVerify").textContent = (data.verification_progress * 100).toFixed(4) + "%";
+
+    const now = Math.floor(Date.now() / 1000);
+    $("blockRows").innerHTML = data.recent_blocks.map((block) => `
+      <tr>
+        <td class="h">${block.height}</td>
+        <td>${fmtAge(now - block.time)}</td>
+        <td>${block.txs}</td>
+        <td title="${block.hash}">${block.hash.slice(0, 16)}&hellip;${block.hash.slice(-6)}</td>
+      </tr>`).join("") || '<tr><td colspan="4" class="empty">no blocks yet</td></tr>';
+
+    if (lastTip !== null && data.blocks > lastTip) {
+      flash("New block at height " + data.blocks, "ok");
+    }
+    lastTip = data.blocks;
+  }
+
+  function flash(message, kind) {
+    const el = $("flash");
+    el.textContent = message;
+    el.dataset.kind = kind;
+  }
+
+  document.querySelectorAll("button.mine").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const count = Number(button.dataset.blocks);
+      document.querySelectorAll("button.mine").forEach((b) => { b.disabled = true; });
+      flash("mining " + count + " block" + (count > 1 ? "s" : "") + "\u2026", "ok");
+      try {
+        const response = await fetch("/api/mine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blocks: count }),
+        });
+        const result = await response.json();
+        if (result.ok) {
+          flash("mined " + result.mined + " block" + (result.mined > 1 ? "s" : "") + " to " + result.address, "ok");
+        } else {
+          flash(result.message || "mining failed", "error");
+        }
+      } catch (error) {
+        flash("mining request failed", "error");
+      }
+      document.querySelectorAll("button.mine").forEach((b) => { b.disabled = false; });
+      refresh();
+    });
+  });
+
+  refresh();
+  setInterval(refresh, 4000);
+</script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+# Base44 development environment for Bitcoin Core.
+#
+# Bitcoin Core is a C++ project: `bitcoind` is a headless daemon whose network
+# surface is JSON-RPC (+ the optional REST interface). Nothing in this repo
+# renders a web page, so the Base44 preview needs a harness to show the node
+# running: `dashboard` serves .base44/preview/index.html on host port 3000 and
+# mirrors the node's live RPC state.
+#
+# Both services run FROM THE BIND-MOUNTED SOURCE -- no image contains a copy of
+# the tree, so edits are picked up by a container restart (the C++ build is
+# ccache-assisted and incremental in the `bitcoin-build` volume).
+#
+# No credentials are involved: the dashboard authenticates with the RPC cookie
+# bitcoind writes into its own data directory. This is a regtest node; it holds
+# no real funds and talks to no external service.
+name: bitcoin-core-base44
+
+services:
+  # Bitcoin node, compiled from the mounted tree on first boot.
+  bitcoind:
+    build:
+      context: .
+      dockerfile: .base44/Dockerfile.bitcoin
+    image: bitcoin-core-base44-dev:local
+    working_dir: /src
+    restart: on-failure
+    environment:
+      - BASE44_PREVIEW_MODE
+      - BUILD_JOBS=${BITCOIN_BUILD_JOBS:-4}
+    volumes:
+      - .:/src
+      - bitcoin-build:/build
+      - bitcoin-data:/data
+    # 1) configure + compile bitcoind/bitcoin-cli from the mounted source
+    #    (incremental after the first run, thanks to the build volume + ccache)
+    # 2) hand the process over to the node, mining-ready on regtest.
+    command:
+      - sh
+      - -ec
+      - |
+        cmake -B /build -S /src \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_GUI=OFF \
+          -DBUILD_TESTS=OFF \
+          -DBUILD_BENCH=OFF \
+          -DBUILD_BITCOIN_BIN=OFF \
+          -DENABLE_IPC=OFF
+        cmake --build /build --parallel "${BUILD_JOBS:-4}" --target bitcoind bitcoin-cli
+        exec /build/bin/bitcoind \
+          -regtest \
+          -datadir=/data \
+          -server=1 \
+          -rpcbind=0.0.0.0 \
+          -rpcallowip=0.0.0.0/0 \
+          -printtoconsole
+    ports:
+      # RPC exposed for curl/bitcoin-cli from the sandbox host (regtest only).
+      - "8000:18443"
+    healthcheck:
+      # The node is responsive over its own RPC when this passes.
+      test: ["CMD-SHELL", "/build/bin/bitcoin-cli -regtest -datadir=/data getblockchaininfo >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 4
+      # Covers the first compile of the tree from source.
+      start_period: 5400s
+
+  # Preview harness: mirrors the node's RPC state as a page on port 3000.
+  dashboard:
+    image: python:3.12-slim
+    working_dir: /src
+    restart: on-failure
+    # Start order only -- the page renders a "starting up" state while the node
+    # is still compiling, so it must not wait for the node to be healthy.
+    depends_on:
+      - bitcoind
+    environment:
+      - BASE44_PREVIEW_MODE
+      - BITCOIN_RPC_HOST=bitcoind
+      - BITCOIN_RPC_PORT=18443
+      - BITCOIN_DATADIR=/data
+      - BITCOIN_NETWORK=regtest
+      - BITCOIN_WALLET=base44preview
+      - PORT=3000
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # index.html is read from disk on every request, so edits show on reload.
+      - .:/src
+      - bitcoin-data:/data
+    command: ["python3", "/src/.base44/preview/server.py"]
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:3000/api/status', timeout=5).status == 200 else 1)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 4
+      start_period: 15s
+
+volumes:
+  bitcoin-build:
+  bitcoin-data:
