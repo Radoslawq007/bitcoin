@@ -81,6 +81,14 @@
   dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
   dt { color: var(--muted); }
   dd { margin: 0; font-family: var(--mono); word-break: break-all; }
+  .addr-bar { display: flex; gap: 10px; margin-top: 10px; }
+  .addr-bar input {
+    flex: 1; font: inherit; font-family: var(--mono); font-size: 13px; color: var(--ink);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+  }
+  .addr-bar input:focus { outline: none; border-color: var(--accent); }
+  td.in { color: var(--green); }
+  td.out { color: var(--red); }
 </style>
 </head>
 <body>
@@ -140,6 +148,15 @@
       <dt>Difficulty</dt><dd id="dDiff">&mdash;</dd>
       <dt>Verification</dt><dd id="dVerify">&mdash;</dd>
     </dl>
+  </section>
+
+  <section class="panel" style="margin-top: 22px;">
+    <h2>Live address (mainnet)</h2>
+    <div class="addr-bar">
+      <input id="addrInput" type="text" value="35ZzWzcg3UL1hrEPMznq2761MzGMQhtJTG" spellcheck="false" />
+      <button id="addrLookup">Look up</button>
+    </div>
+    <div id="addrResult"><div class="empty">enter an address and click Look up</div></div>
   </section>
 </div>
 
@@ -242,6 +259,50 @@
       refresh();
     });
   });
+
+  async function addrLookup() {
+    const addr = $("addrInput").value.trim();
+    if (!addr) return;
+    const btn = $("addrLookup");
+    btn.disabled = true;
+    $("addrResult").innerHTML = '<div class="empty">fetching on-chain data\u2026</div>';
+    try {
+      const res = await fetch("/api/address/" + encodeURIComponent(addr), { cache: "no-store" });
+      const data = await res.json();
+      if (!data.ok) {
+        $("addrResult").innerHTML = '<div class="empty" style="color:var(--red)">' + (data.message || "lookup failed") + "</div>";
+        return;
+      }
+      const now = Math.floor(Date.now() / 1000);
+      const txRows = data.recent_txs.map((tx) => {
+        const incoming = tx.net >= 0;
+        const age = tx.time ? fmtAge(now - tx.time) : "pending";
+        return `<tr>
+          <td class="${incoming ? "in" : "out"}">${incoming ? "+" : ""}${fmtBtc(tx.net)}</td>
+          <td>${tx.confirmed ? "#" + tx.height : "pending"}</td>
+          <td>${age}</td>
+          <td title="${tx.txid}">${tx.txid.slice(0, 16)}&hellip;${tx.txid.slice(-6)}</td>
+        </tr>`;
+      }).join("") || '<tr><td colspan="4" class="empty">no transactions</td></tr>';
+      $("addrResult").innerHTML = `
+        <div class="grid" style="margin-top:14px">
+          <div class="card"><div class="k">Balance</div><div class="v">${fmtBtc(data.balance)}</div></div>
+          <div class="card"><div class="k">Total received</div><div class="v">${fmtBtc(data.total_received)}</div></div>
+          <div class="card"><div class="k">Total sent</div><div class="v">${fmtBtc(data.total_sent)}</div></div>
+          <div class="card"><div class="k">Transactions</div><div class="v">${data.tx_count} <small>+${data.unconfirmed_tx_count} unconfirmed</small></div></div>
+        </div>
+        <table style="margin-top:14px">
+          <thead><tr><th>Net</th><th>Block</th><th>Age</th><th>Txid</th></tr></thead>
+          <tbody>${txRows}</tbody>
+        </table>`;
+    } catch (e) {
+      $("addrResult").innerHTML = '<div class="empty" style="color:var(--red)">lookup request failed</div>';
+    }
+    btn.disabled = false;
+  }
+  $("addrLookup").addEventListener("click", addrLookup);
+  $("addrInput").addEventListener("keydown", (e) => { if (e.key === "Enter") addrLookup(); });
+  addrLookup();
 
   refresh();
   setInterval(refresh, 4000);

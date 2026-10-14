@@ -170,12 +170,61 @@ def mine_blocks(count):
     return {"mined": len(hashes), "blocks": hashes, "address": address}
 
 
+def _fetch_json(url, timeout=20):
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def address_payload(address):
+    """Live on-chain data for a mainnet address via the public mempool.space API."""
+    quoted = urllib.parse.quote(address)
+    info = _fetch_json("https://mempool.space/api/address/%s" % quoted)
+    txs = _fetch_json("https://mempool.space/api/address/%s/txs" % quoted)
+    chain = info.get("chain_stats", {})
+    mempool = info.get("mempool_stats", {})
+    funded = chain.get("funded_txo_sum", 0)
+    spent = chain.get("spent_txo_sum", 0)
+    recent = []
+    for tx in txs[:12]:
+        status = tx.get("status") or {}
+        received = sum(
+            vout.get("value", 0)
+            for vout in tx.get("vout", [])
+            if vout.get("scriptpubkey_address") == address
+        )
+        sent = sum(
+            (vin.get("prevout") or {}).get("value", 0)
+            for vin in tx.get("vin") or []
+            if (vin.get("prevout") or {}).get("scriptpubkey_address") == address
+        )
+        recent.append({
+            "txid": tx.get("txid"),
+            "confirmed": status.get("confirmed", False),
+            "time": status.get("block_time"),
+            "height": status.get("block_height"),
+            "net": received - sent,
+            "fee": tx.get("fee", 0),
+            "size": tx.get("size", 0),
+        })
+    return {
+        "ok": True,
+        "address": address,
+        "balance": (funded - spent) / 1e8,
+        "total_received": funded / 1e8,
+        "total_sent": spent / 1e8,
+        "tx_count": chain.get("tx_count", 0),
+        "unconfirmed_tx_count": mempool.get("tx_count", 0),
+        "recent_txs": recent,
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "Base44BitcoinPreview/1.0"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):  # keep the container log readable
-        if not self.path.startswith("/api/status"):
+        if not (self.path.startswith("/api/status") or self.path.startswith("/api/address")):
             super().log_message(fmt, *args)
 
     def _send(self, code, body, content_type):
@@ -219,6 +268,13 @@ class Handler(BaseHTTPRequestHandler):
                 )
             except RpcError as exc:
                 self._send_json(200, {"ok": False, "state": "error", "message": exc.message})
+            return
+        parts = path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "api" and parts[1] == "address":
+            try:
+                self._send_json(200, address_payload(parts[2]))
+            except Exception as exc:
+                self._send_json(200, {"ok": False, "message": str(exc)})
             return
         self._send(404, "not found", "text/plain; charset=utf-8")
 
